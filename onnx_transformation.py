@@ -1,12 +1,7 @@
 import os
-import sys
 import torch
 import argparse
-from pprint import pprint
-
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from act.act.imitate_episodes import make_policy
+from policy import ACTPolicy, CNNMLPPolicy
 
 def main(args):
 
@@ -53,18 +48,27 @@ def main(args):
     dummy_image = torch.randn(batch_size, num_cameras, channels, height, width).cuda()
 
     # ONNX로 export
-    onnx_path = os.path.join(save_dir, "policy.onnx")
+    onnx_path = os.path.join(save_dir, "act.onnx")
     torch.onnx.export(
         policy,                                 # 변환할 모델
         (dummy_qpos, dummy_image),              # 입력 튜플
         onnx_path,                              # 저장 경로
         export_params=True,                     # 모델 파라미터 저장
-        opset_version=24,                       # ONNX opset 버전
+        opset_version=20,                       # ONNX opset 버전
         do_constant_folding=True,               # 상수 폴딩 최적화
         input_names=['qpos', 'image'],          # 입력 이름
         output_names=['action'],                # 출력 이름 (모델에 따라 다를 수 있음)
     )
     print(f"ONNX 모델이 {onnx_path}에 저장되었습니다.")
+
+def make_policy(policy_class, policy_config):
+    if policy_class == 'ACT':
+        policy = ACTPolicy(policy_config)
+    elif policy_class == 'CNNMLP':
+        policy = CNNMLPPolicy(policy_config)
+    else:
+        raise NotImplementedError
+    return policy
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

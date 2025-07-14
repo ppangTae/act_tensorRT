@@ -4,3 +4,4 @@ meloha_box_picking_data/
 meloha_box_picking_data.zip
 *.engine
 *.onnx
+*.cache
