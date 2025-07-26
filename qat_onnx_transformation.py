@@ -8,14 +8,17 @@ parent_dir = Path(__file__).resolve().parent.parent
 act_dir = parent_dir / "act" / "act"
 sys.path.append(str(parent_dir))
 sys.path.append(str(act_dir))
-
 from policy import ACTPolicy, CNNMLPPolicy
-from constants import (ONNX_MODEL_DIR,
-                       CKPT_DIR)
+
+from pytorch_quantization import quant_modules
+from pytorch_quantization import nn as quant_nn
+quant_nn.TensorQuantizer.use_fb_fake_quant = True # Fake quantization 노드 포함
+quant_modules.initialize()
 
 def main(args):
 
-    ckpt_path = CKPT_DIR / "policy_best_enc4_dec7_chunk60.ckpt"
+    save_dir = parent_dir / "tensorRT" / "onnx"
+    ckpt_path = parent_dir / "act" / "ckpt" / "policy_best_qat_enc4_dec7_chunk60.ckpt"
     camera_names = ["cam_head", "cam_left_wrist", "cam_right_wrist"]
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -23,12 +26,12 @@ def main(args):
     state_dim = 6
     lr_backbone = 1e-5
     backbone = 'resnet18'
-    enc_layers = 3
-    dec_layers = 6
+    enc_layers = 4
+    dec_layers = 7
     nheads = 8
     policy_config = {
                     'lr': 1e-5,
-                    'num_queries': 30,
+                    'num_queries': 60,
                     'kl_weight': 10,
                     'hidden_dim': 512,
                     'dim_feedforward': 3200,
@@ -57,7 +60,7 @@ def main(args):
     dummy_image = torch.randn(batch_size, num_cameras, channels, height, width).cuda()
 
     # ONNX로 export
-    onnx_path = os.path.join(ONNX_MODEL_DIR, "act_enc4_dec7_chunk60.onnx")
+    onnx_path = os.path.join(save_dir, "act_qat_enc4_dec7_chunk60.onnx")
     torch.onnx.export(
         policy,                                 # 변환할 모델
         (dummy_qpos, dummy_image),              # 입력 튜플

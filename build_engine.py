@@ -8,20 +8,23 @@ import torch
 from PIL import Image
 from polygraphy.backend import trt as poly_trt
 from torchvision import transforms
+from pathlib import Path
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append("/home/park/ros2/act/act")
+parent_dir = Path(__file__).resolve().parent.parent
+act_dir = parent_dir / "act" / "act"
+sys.path.append(str(parent_dir))
+sys.path.append(str(act_dir))
+
 from act.act.utils import get_norm_stats
+from constants import (DATASET_DIR,
+                       ONNX_MODEL_DIR,
+                       ENGINE_DIR)
 
 # 1. Dataset에서 representative dataset을 추린다.
 # -  100개의 episode에서 총 10개의 episode를 뽑는다고 생각하고, 30hz제어, chunk size : 30, 총 30s 제어한다고 생각하면
 # -  10개의 episode는 9000개의 (qpos, image)쌍이 존재한다.
 
-dataset_dir = "/home/park/ros2/tensorRT/meloha_box_picking_data"
 camera_names = ['cam_head', 'cam_left_wrist','cam_right_wrist']
-
-# ! You should change your own data's episode id
-representative_episode_ids = [0, 10, 20, 30, 40]
 
 # 이 함수는 INT8 엔진에서 calibration을 통해 정확도가 얼마나 향상되는지 판단하기 위해 사용됩니다.
 def random_data_generator(norm_stats):
@@ -34,7 +37,7 @@ def random_data_generator(norm_stats):
 
 def data_generator(norm_stats, representative_episode_ids):
     for episode_id in representative_episode_ids:
-        dataset_path = os.path.join(dataset_dir, f"episode_{episode_id}.hdf5")
+        dataset_path = os.path.join(DATASET_DIR, f"episode_{episode_id}.hdf5")
         with h5py.File(dataset_path, 'r') as root:
             qpos_data = root['/observations/qpos'][()] # shape : (episode_len, qpos)
             image_dict = dict()
@@ -69,22 +72,25 @@ def data_generator(norm_stats, representative_episode_ids):
 
 def main(args):
     
-    onnx_model_path = args["onnx_model_path"]
-    engine_path = args["engine_path"]
+    onnx_model_name = args["onnx_model_name"]
+    engine_name = args["engine_name"]
     calibration = args["calibration"]
     fp16 = args["fp16"]
     fp32 = args["fp32"]
     tf32 = args["tf32"]
-    dataest_dir = args["dataset_dir"]
     episode_ids = args["episode_ids"]
 
-    norm_stats = get_norm_stats(dataset_dir, 41)
+    onnx_model_path = ONNX_MODEL_DIR / onnx_model_name
+    engine_path = ENGINE_DIR / engine_name
 
-    builder, network, parser = poly_trt.network_from_onnx_path(path=onnx_model_path)
+    norm_stats = get_norm_stats(DATASET_DIR, 41)
+
+    builder, network, parser = poly_trt.network_from_onnx_path(path=str(onnx_model_path))
 
     if fp32:
         builder_config = poly_trt.create_config(builder=builder,
-                                                network=network)
+                                                network=network,
+                                                fp16=fp16)
     else:
         if calibration:
             calibrator = poly_trt.Calibrator(data_loader=data_generator(norm_stats, episode_ids),
@@ -111,19 +117,13 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--onnx_model_path", action="store", type=str,
-                        default="/home/park/ros2/tensorRT/act.onnx",
-                        help="입력 ONNX 모델 파일 경로")
-    parser.add_argument("--engine_path", action="store", type=str,
-                        default="/home/park/ros2/tensorRT/act_no_calib_int8_fp16.engine",
-                        help="TensorRT Engine path")
+    parser.add_argument("--onnx_model_name", action="store", type=str,
+                        default="act_qat.onnx")
+    parser.add_argument("--engine_name", action="store", type=str,required=True)
     parser.add_argument("--calibration", action="store_true")
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--fp32", action="store_true")
     parser.add_argument("--tf32", action="store_true")
-    parser.add_argument("--dataset_dir", action="store", type=str,
-                        default="/home/park/ros2/tensorRT/meloha_box_picking_data",
-                        help="대표 데이터셋 디렉터리")
     parser.add_argument("--episode_ids", action="store", type=int, nargs="+",
                         default=[0, 10, 20, 30, 40],
                         help="대표 episode id 리스트 (space‑separated)")
